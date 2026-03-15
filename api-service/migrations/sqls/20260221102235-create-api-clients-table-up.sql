@@ -1,0 +1,9 @@
+CREATE TABLE api_clients (
+    id VARCHAR(36) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    api_key VARCHAR(64) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE INDEX idx_api_key (api_key)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;

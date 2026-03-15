@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ScaleQueue — Job Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <!-- TOPBAR -->
+      <div class="topbar">
+        <div class="brand">
+          <div class="brand-icon">⚡</div>
+          <span class="brand-name">Scale<span>Queue</span></span>
+        </div>
+        <div class="topbar-right">
+          <div class="pulse-dot" id="liveDot"></div>
+          <span class="live-label">LIVE</span>
+          <span class="ts" id="tsLabel">--:--:--</span>
+        </div>
+      </div>
+
+      <!-- CONFIG -->
+      <div class="config-bar">
+        <input
+          type="text"
+          id="apiUrl"
+          placeholder="API URL  e.g. http://localhost:3000"
+          value="http://localhost:3000"
+        />
+        <input
+          type="password"
+          id="apiKey"
+          placeholder="x-api-key"
+          value="sq-dashboard-key-2024"
+        />
+        <select id="refreshInterval">
+          <option value="3000">Refresh 3s</option>
+          <option value="5000">Refresh 5s</option>
+          <option value="10000">Refresh 10s</option>
+          <option value="0">Manual</option>
+        </select>
+        <button class="btn btn-accent" onclick="fetchJobs()">↻ Refresh</button>
+      </div>
+
+      <!-- ERROR BANNER -->
+      <div class="error-banner" id="errorBanner"></div>
+
+      <!-- STATS -->
+      <div class="stats">
+        <div class="stat" style="--c: var(--accent2)">
+          <div class="stat-val" id="st-total">—</div>
+          <div class="stat-label">Total</div>
+        </div>
+        <div class="stat" style="--c: var(--pending)">
+          <div class="stat-val" id="st-pending">—</div>
+          <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat" style="--c: var(--process)">
+          <div class="stat-val" id="st-processing">—</div>
+          <div class="stat-label">Processing</div>
+        </div>
+        <div class="stat" style="--c: var(--complete)">
+          <div class="stat-val" id="st-completed">—</div>
+          <div class="stat-label">Completed</div>
+        </div>
+        <div class="stat" style="--c: var(--failed)">
+          <div class="stat-val" id="st-failed">—</div>
+          <div class="stat-label">Failed</div>
+        </div>
+        <div class="stat" style="--c: var(--dead)">
+          <div class="stat-val" id="st-dead">—</div>
+          <div class="stat-label">Dead</div>
+        </div>
+      </div>
+
+      <!-- SUBMIT PANEL -->
+      <div class="submit-panel">
+        <div class="panel-title">Submit Test Job</div>
+        <div class="submit-form">
+          <div class="form-group">
+            <label>Job Type</label>
+            <select id="jobType">
+              <option value="send_email">send_email</option>
+              <option value="send_notification">send_notification</option>
+              <option value="generate_report">generate_report</option>
+              <option value="payment_retry">payment_retry</option>
+              <option value="fail_job">fail_job ⚠ (tests retry)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Max Retries</label>
+            <input
+              type="number"
+              id="maxRetries"
+              value="3"
+              min="0"
+              max="10"
+              style="width: 90px"
+            />
+          </div>
+          <div class="form-group">
+            <label>Priority</label>
+            <input
+              type="number"
+              id="priority"
+              value="5"
+              min="1"
+              max="10"
+              style="width: 80px"
+            />
+          </div>
+          <button
+            class="btn btn-accent"
+            onclick="submitJob()"
+            style="height: 34px; align-self: flex-end"
+          >
+            + Submit Job
+          </button>
+        </div>
+      </div>
+
+      <!-- TOOLBAR -->
+      <div class="toolbar">
+        <div class="filters" id="filterBar">
+          <button
+            class="filter-btn active"
+            data-status="ALL"
+            onclick="setFilter(this)"
+          >
+            ALL
+          </button>
+          <button
+            class="filter-btn"
+            data-status="PENDING"
+            onclick="setFilter(this)"
+          >
+            PENDING
+          </button>
+          <button
+            class="filter-btn"
+            data-status="PROCESSING"
+            onclick="setFilter(this)"
+          >
+            PROCESSING
+          </button>
+          <button
+            class="filter-btn"
+            data-status="COMPLETED"
+            onclick="setFilter(this)"
+          >
+            COMPLETED
+          </button>
+          <button
+            class="filter-btn"
+            data-status="FAILED"
+            onclick="setFilter(this)"
+          >
+            FAILED
+          </button>
+          <button
+            class="filter-btn"
+            data-status="DEAD"
+            onclick="setFilter(this)"
+          >
+            DEAD ☠
+          </button>
+        </div>
+        <span
+          style="
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--muted);
+          "
+          id="resultCount"
+        ></span>
+      </div>
+
+      <!-- TABLE -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Job ID</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Retries</th>
+              <th>Priority</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="jobTableBody">
+            <tr>
+              <td colspan="7">
+                <div class="empty-state">
+                  <div class="empty-icon">⏳</div>
+                  Configure API URL and key above, then refresh.
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- MODAL -->
+    <div
+      class="modal-overlay"
+      id="logsModal"
+      style="display: none"
+      onclick="closeModal(event)"
+    >
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-title">AUDIT LOG</span>
+          <span class="modal-id" id="modalJobId">—</span>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modalBody">
+          <div class="empty-state">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
