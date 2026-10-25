@@ -52,12 +52,35 @@ Stop with `docker compose down`. Named volumes retain data. **`docker compose do
 ```mermaid
 flowchart TD
   Client[API client] --> API[TypeScript API]
-  API --> SQL[MySQL jobs and outbox]
-  SQL --> Dispatcher[Outbox dispatcher]
-  Dispatcher --> Redis[Redis Streams]
-  Redis --> Worker[Go workers]
-  Worker --> SQL
+  API -->|Atomic acceptance| DB[(MySQL jobs and outbox)]
+  subgraph Workers[Go worker process]
+    Dispatcher[Outbox dispatcher]
+    Consumer[Stream consumer]
+    Handler[Job handler]
+    Consumer -->|Leased claim| Handler
+  end
+  DB -->|Due dispatch intent| Dispatcher
+  Dispatcher -->|Publish| Redis[(Redis Streams)]
+  Redis -->|Delivery and recovery| Consumer
+  Consumer -->|Claim and renew| DB
+  Handler -->|Persist outcome or retry| DB
+  Consumer -->|ACK after durable outcome| Redis
 ```
+
+MySQL owns durable state. Redis carries deliveries; duplicate delivery is expected.
+The dispatcher and consumers run inside each Go worker process.
+
+| Design block | Responsibility |
+| --- | --- |
+| API | Validate/authenticate, deduplicate requests, atomically accept a job and dispatch intent |
+| MySQL | Jobs, attempt budgets, leases, retry due times, audit history, and outbox |
+| Dispatcher | Publish due intents; republish nonterminal work after a delivery gap |
+| Redis Streams | Consumer-group delivery, acknowledgment, and pending-entry recovery |
+| Worker/handler | Claim, renew ownership, execute, and atomically persist the outcome |
+
+Explore [acceptance and execution diagrams](docs/architecture.md) and the
+[state/recovery contract](docs/reliability.md).
+
 
 - Job acceptance and outbox insertion commit together in MySQL. Redis availability is not required to accept a valid job.
 - The dispatcher locks due outbox rows, publishes, then records publication. A crash between publication and commit may duplicate delivery, but does not erase the dispatch intent.
