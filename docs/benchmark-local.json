@@ -1,0 +1,13 @@
+{
+  "jobs": 20,
+  "client_concurrency": 4,
+  "completed": 20,
+  "errors": 0,
+  "duration_seconds": 3.206367457,
+  "jobs_per_second": 6.237588257807721,
+  "end_to_end_p50_ms": 585.2360369999999,
+  "end_to_end_p95_ms": 768.59334,
+  "node": "v24.22.1",
+  "platform": "linux",
+  "cpus": 8
+}

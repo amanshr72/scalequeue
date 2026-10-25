@@ -2,78 +2,74 @@ package worker
 
 import (
 	"context"
-	"database/sql"
+	"crypto/rand"
 	"fmt"
-	"log"
+	"github.com/redis/go-redis/v9"
+	"log/slog"
 	"sync"
-
+	"time"
+	"worker-service/internal/config"
+	"worker-service/internal/db"
 	"worker-service/internal/handlers"
 	"worker-service/internal/queue"
 )
 
-type Pool struct {
-	size          int
-	db            *sql.DB
-	registry      *handlers.Registry
-	requeuer      *queue.Requeuer
-	redisURL      string
-	streamName    string
-	consumerGroup string
-}
-
-func NewPool(
-	size int,
-	db *sql.DB,
-	registry *handlers.Registry,
-	redisURL string,
-	streamName string,
-	consumerGroup string,
-) *Pool {
-	requeuer := queue.NewRequeuer(redisURL, streamName)
-	return &Pool{
-		size:          size,
-		db:            db,
-		registry:      registry,
-		requeuer:      requeuer,
-		redisURL:      redisURL,
-		streamName:    streamName,
-		consumerGroup: consumerGroup,
+func Run(stop context.Context, cfg *config.Config, store *db.Store, client redis.UniversalClient) error {
+	execution, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	drained := make(chan struct{})
+	defer close(drained)
+	go func() {
+		select {
+		case <-drained:
+			return
+		case <-stop.Done():
+		}
+		timer := time.NewTimer(cfg.ShutdownTimeout)
+		defer timer.Stop()
+		select {
+		case <-drained:
+		case <-timer.C:
+			cancel()
+		}
+	}()
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return err
 	}
-}
-
-// Start launches N workers, each in its own goroutine
-func (p *Pool) Start(ctx context.Context) {
-	log.Printf("[Pool] Starting %d workers", p.size)
-
+	// Registry is immutable after construction and safe for concurrent reads.
+	registry := handlers.NewRegistry()
 	var wg sync.WaitGroup
-
-	for i := 0; i < p.size; i++ {
+	for i := 0; i < cfg.WorkerCount; i++ {
+		id := fmt.Sprintf("%x-%d", nonce, i)
+		w := &Worker{ID: id, Store: store, Registry: registry, Lease: cfg.Lease}
+		c := &queue.Consumer{Client: client, Stream: cfg.StreamName, Group: cfg.ConsumerGroup, Name: id, Worker: w, RecoveryInterval: cfg.RecoveryInterval, RecoveryIdle: cfg.RecoveryIdle, JobTimeout: cfg.JobTimeout}
+		if err := c.EnsureConsumerGroup(stop); err != nil {
+			return err
+		}
 		wg.Add(1)
-		workerID := fmt.Sprintf("worker-%d", i+1)
-		consumerName := fmt.Sprintf("%s-%s", p.consumerGroup, workerID)
-
-		go func(id string, name string) {
-			defer wg.Done()
-
-			w := New(id, p.db, p.registry, p.requeuer)
-			consumer := queue.NewConsumer(
-				p.redisURL,
-				p.streamName,
-				p.consumerGroup,
-				name,
-				w,
-				p.db,
-			)
-
-			if err := consumer.EnsureConsumerGroup(ctx); err != nil {
-				log.Printf("[Pool] Worker %s failed to setup consumer group: %v", id, err)
-				return
-			}
-
-			consumer.Start(ctx)
-		}(workerID, consumerName)
+		go func() { defer wg.Done(); c.Start(stop, execution) }()
 	}
-
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		publish := queue.Publish(client, cfg.StreamName)
+		for stop.Err() == nil {
+			ctx, cancel := context.WithTimeout(stop, 5*time.Second)
+			more, err := store.Dispatch(ctx, publish)
+			cancel()
+			if err != nil {
+				slog.Error("outbox dispatch failed", "error", err)
+			}
+			if err != nil || !more {
+				select {
+				case <-stop.Done():
+					return
+				case <-time.After(250 * time.Millisecond):
+				}
+			}
+		}
+	}()
 	wg.Wait()
-	log.Println("[Pool] All workers stopped")
+	return nil
 }

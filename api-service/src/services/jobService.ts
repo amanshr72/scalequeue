@@ -1,25 +1,29 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import pool from "../db/mysql";
-import { queueService } from "./queueService";
 import { CreateJobInput } from "../validators/jobValidator";
+import { canonical, digest } from "./identity";
 import { Job } from "../types/job";
 
 export class JobService {
-  async createJob(input: CreateJobInput): Promise<Job> {
+  async createJob(input: CreateJobInput, requestKey?: string): Promise<Job> {
     const jobId = uuidv4();
+    const keyHash = requestKey ? digest(requestKey) : null;
+    const requestHash = requestKey ? digest(canonical(input)) : null;
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
       // S1: write into db (source of truth)
       await conn.execute(
-        `INSERT INTO jobs (id, type, payload, status, max_retries, priority)
-        VALUES (?, ?, ?, 'PENDING', ?, ?)`,
+        `INSERT INTO jobs (id, type, payload, status, max_retries, priority, request_key, request_hash)
+        VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)`,
         [
           jobId,
           input.type,
           JSON.stringify(input.payload),
           input.max_retries,
           input.priority,
+          keyHash,
+          requestHash,
         ],
       );
 
@@ -30,25 +34,26 @@ export class JobService {
         [jobId],
       );
 
+      await conn.execute(
+        `INSERT INTO job_outbox (job_id, generation, attempt, available_at)
+         VALUES (?, 1, 1, NOW(6))`, [jobId],
+      );
       await conn.commit();
 
-      // S3: Push to redis stream (DB job stays pending if fails — cleanup cron will re-queue)
-      try {
-        await queueService.push(jobId, input.type);
-      } catch (redisError) {
-        console.error(
-          `[JobService] Redis push failed for job ${jobId}:`,
-          redisError,
-        );
-        // trigger reconciliation
-      }
-
       // S4: Fetch & returned job
-      const job = await this.getJobById(jobId);
+      const [created] = await conn.execute<any[]>("SELECT * FROM jobs WHERE id = ?", [jobId]);
+      const job = created[0] as Job;
       if (!job) throw new Error("Job created but cloud not be fetched");
       return job;
     } catch (err) {
       await conn.rollback();
+      if (keyHash && (err as {code?: string}).code === 'ER_DUP_ENTRY') {
+        const [rows] = await conn.execute<any[]>('SELECT * FROM jobs WHERE request_key = ?', [keyHash]);
+        if (rows.length) {
+          if (rows[0].request_hash !== requestHash) throw new Error('IDEMPOTENCY_CONFLICT');
+          return rows[0] as Job;
+        }
+      }
       throw err;
     } finally {
       conn.release();
@@ -146,21 +151,23 @@ export class JobService {
   }
 
   async requeueJob(id: string): Promise<Job> {
-    const job = await this.getJobById(id);
-
-    if (!job) throw new Error("JOB_NOT_FOUND");
-    if (job.status !== "DEAD" && job.status !== "FAILED") {
-      throw new Error("JOB_NOT_REQUEUEABLE");
-    }
-
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
 
+      const [rows] = await connection.execute<any[]>(
+        'SELECT * FROM jobs WHERE id = ? FOR UPDATE', [id],
+      );
+      const job = rows[0];
+      if (!job) throw new Error('JOB_NOT_FOUND');
+      if (job.status !== 'DEAD' && job.status !== 'FAILED') throw new Error('JOB_NOT_REQUEUEABLE');
+      // Lock and increment generation: old Redis messages cannot execute a replay.
       // Reset job state
       await connection.execute(
-        `UPDATE jobs 
-       SET status = 'PENDING', retry_count = 0, error_msg = NULL, 
+        `UPDATE jobs
+       SET status = 'PENDING', retry_count = 0, attempt_count = 0,
+           generation = generation + 1, next_attempt_at = NOW(6),
+           lease_owner = NULL, lease_until = NULL, error_msg = NULL,
            processed_at = NULL, updated_at = NOW()
        WHERE id = ?`,
         [id],
@@ -172,12 +179,15 @@ export class JobService {
         [id, job.status],
       );
 
+      await connection.execute(
+        `INSERT INTO job_outbox (job_id, generation, attempt, available_at)
+         VALUES (?, ?, 1, NOW(6))`, [id, job.generation + 1],
+      );
       await connection.commit();
 
-      // Push back to Redis
-      await queueService.push(id, job.type);
 
-      const updated = await this.getJobById(id);
+      const [updatedRows] = await connection.execute<any[]>("SELECT * FROM jobs WHERE id = ?", [id]);
+      const updated = updatedRows[0] as Job;
       if (!updated) throw new Error("Failed to fetch updated job");
       return updated;
     } catch (error) {

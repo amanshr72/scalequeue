@@ -8,8 +8,7 @@ export type JobStatus =
 export type JobType =
   | "send_email"
   | "send_notification"
-  | "generate_report"
-  | "payment_retry";
+  | "fail_job";
 
 export interface Job {
   id: string;

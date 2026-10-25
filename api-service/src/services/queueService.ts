@@ -20,21 +20,7 @@ class QueueService {
     });
   }
 
-  async push(jobId: string, jobType: string): Promise<string> {
-    const messageId = await this.client.xadd(
-      this.STREAM_NAME,
-      "*",
-      "job_id",
-      jobId,
-      "job_type",
-      jobType,
-    );
-
-    if (!messageId) throw new Error(`Failed to push job ${jobId} to stream`);
-
-    console.log(`[Queue] job ${jobId} pushed with messaged Id ${messageId}`);
-    return messageId;
-  }
+  async close(): Promise<void> { this.client.disconnect(); }
 
   async ping(): Promise<boolean> {
     // try {

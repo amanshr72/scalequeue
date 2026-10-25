@@ -9,7 +9,11 @@ export class JobController {
   createJob = async (req: Request, res: Response): Promise<void> => {
     try {
       const input = createJobSchema.parse(req.body);
-      const job = await jobService.createJob(input);
+      const key = req.get('Idempotency-Key');
+      if (key !== undefined && (!key.trim() || key.length > 128)) {
+        res.status(400).json({error:'Idempotency-Key must be 1..128 nonblank characters'}); return;
+      }
+      const job = await jobService.createJob(input, key ? `${req.clientId}:${key}` : undefined);
 
       res.status(202).json({
         success: true,
@@ -29,6 +33,9 @@ export class JobController {
         return;
       }
 
+      if (error instanceof Error && error.message === 'IDEMPOTENCY_CONFLICT') {
+        res.status(409).json({error:'Idempotency key already used with a different request'}); return;
+      }
       console.error("[JobController] createJob error:", error);
       res.status(500).json({
         success: false,
@@ -72,8 +79,8 @@ export class JobController {
         offset = "0",
       } = req.query as Record<string, string>;
 
-      const parsedLimit = Math.min(parseInt(limit, 10) || 20, 100); // cap at 100
-      const parsedOffset = parseInt(offset, 10) || 0;
+      const parsedLimit = Math.max(1, Math.min(parseInt(limit, 10) || 20, 100)); // cap at 100
+      const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
 
       const result = await jobService.listJobs({
         status,
@@ -99,11 +106,8 @@ export class JobController {
 
   listDeadJobs = async (req: Request, res: Response): Promise<void> => {
     try {
-      const limit = Math.min(
-        parseInt((req.query.limit as string) || "20"),
-        100,
-      );
-      const offset = parseInt((req.query.offset as string) || "0");
+      const limit = Math.max(1, Math.min(parseInt(String(req.query.limit), 10) || 20, 100));
+      const offset = Math.max(0, parseInt(String(req.query.offset), 10) || 0);
 
       const result = await jobService.listDeadJobs(limit, offset);
       res.json({
