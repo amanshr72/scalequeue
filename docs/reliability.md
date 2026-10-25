@@ -8,6 +8,40 @@
 
 Replay locks a terminal job, increments its generation, resets attempts, and inserts a new outbox intent in the same transaction. A reused enqueue idempotency key continues to refer to the original job, including its current replay generation. Request keys are scoped to API client identity and retained for the lifetime of the job.
 
+## Job state diagram
+
+```mermaid
+stateDiagram-v2
+  direction TB
+  [*] --> PENDING: Accepted in MySQL
+  PENDING --> PROCESSING: Due claim increments attempt count
+  PROCESSING --> COMPLETED: Persist successful outcome
+  PROCESSING --> PENDING: Persist retry and future outbox intent
+  PROCESSING --> DEAD: Permanent failure or exhausted budget
+  PROCESSING --> PROCESSING: Expired lease reclaimed within budget
+  DEAD --> PENDING: Explicit replay increments generation
+  COMPLETED --> [*]
+```
+
+`FAILED` is a legacy replayable status; new execution uses `PENDING`, `PROCESSING`,
+`COMPLETED`, and `DEAD`. Interrupted attempts can exhaust the budget during recovery.
+
+## Recovery boundaries
+
+```mermaid
+flowchart TD
+  Delivery[Recovered or repeated delivery] --> Claim{Claim result}
+  Claim -->|Terminal or old generation| Ack[ACK without execution]
+  Claim -->|Active lease or storage error| Pending[Keep delivery pending]
+  Claim -->|Due and within budget| Execute[Execute under renewed lease]
+  Execute --> Persist{Outcome committed}
+  Persist -->|Yes| Ack
+  Persist -->|No| Pending
+```
+
+An early retry delivery may also be acknowledged: its future outbox intent already
+owns the next dispatch. Exhausted interrupted work is marked DEAD before acknowledgment.
+
 ## Failure boundaries
 
 | Failure | Result |
