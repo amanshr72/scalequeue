@@ -1,0 +1,49 @@
+name: Build and reliability tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  reliability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 13306
+      DB_USER: scalequeue
+      DB_PASSWORD: scalequeue-local
+      DB_NAME: scalequeue
+      REDIS_URL: redis://127.0.0.1:16379
+      REDIS_TEST_URL: redis://127.0.0.1:16379
+      MYSQL_TEST_DSN: 'scalequeue:scalequeue-local@tcp(127.0.0.1:13306)/scalequeue?parseTime=true'
+      MYSQL_URL: 'scalequeue:scalequeue-local@tcp(127.0.0.1:13306)/scalequeue?parseTime=true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: api-service/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: worker-service/go.mod
+          cache-dependency-path: worker-service/go.sum
+      - run: docker compose -f compose.yaml -f compose.test.yaml up -d --wait mysql redis
+      - run: npm ci && npm run build && npm test
+        working-directory: api-service
+      - run: node scripts/migration-test.cjs
+      - run: go vet ./... && go test -race -count=1 ./... && go build -o /tmp/scalequeue-worker ./cmd/worker
+        working-directory: worker-service
+      - run: node scripts/integration.cjs
+      - run: docker compose build
+      - name: Verify complete Compose startup
+        run: |
+          docker compose -f compose.yaml -f compose.test.yaml down -v
+          docker compose up -d --build
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/health && curl -fsS http://127.0.0.1:9090/ready; then exit 0; fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - if: always()
+        run: docker compose logs && docker compose -f compose.yaml -f compose.test.yaml down -v

@@ -1,0 +1,71 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: scalequeue
+      MYSQL_USER: scalequeue
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-scalequeue-local}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-scalequeue-root-local}
+    volumes: [mysql-data:/var/lib/mysql]
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -uscalequeue -e "SELECT 1" scalequeue']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  redis:
+    image: redis:7.4-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: ./api-service
+    command: [npm, run, migrate]
+    environment: &db-env
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: scalequeue
+      DB_PASSWORD: ${MYSQL_PASSWORD:-scalequeue-local}
+      DB_NAME: scalequeue
+    depends_on:
+      mysql: {condition: service_healthy}
+  seed:
+    build: ./api-service
+    command: [node, scripts/seed.cjs]
+    environment:
+      <<: *db-env
+      DEMO_API_KEY: ${DEMO_API_KEY:-local-demo-key-change-me}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  api:
+    build: ./api-service
+    environment:
+      <<: *db-env
+      REDIS_URL: redis://redis:6379
+      DEMO_API_KEY: ${DEMO_API_KEY:-local-demo-key-change-me}
+    ports: ['127.0.0.1:3000:3000']
+    stop_grace_period: 35s
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  worker:
+    build: ./worker-service
+    environment:
+      MYSQL_URL: 'scalequeue:${MYSQL_PASSWORD:-scalequeue-local}@tcp(mysql:3306)/scalequeue?parseTime=true'
+      REDIS_URL: redis://redis:6379
+      WORKER_COUNT: 3
+      LEASE_DURATION: 30s
+      RECOVERY_INTERVAL: 5s
+      RECOVERY_IDLE: 30s
+      SHUTDOWN_TIMEOUT: 25s
+    ports: ['127.0.0.1:9090:9090']
+    stop_grace_period: 35s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+volumes:
+  mysql-data:
+  redis-data:
