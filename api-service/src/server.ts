@@ -30,8 +30,8 @@ app.get("/health", async (req, resp) => {
   });
 });
 
-app.use("/api/v1/jobs", jobRoutes);
-// app.use("/api/v1/jobs", apiKeyAuth, jobRoutes);
+app.use("/api/v1/jobs", apiKeyAuth, jobRoutes);
+
 
 app.use((req, resp) => {
   resp.status(404).json({ error: "Route not found" });
@@ -40,11 +40,25 @@ app.use((req, resp) => {
 async function bootstrap() {
   try {
     await testConnection();
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
       console.log(
         `[Server] Running on port ${config.port} in ${config.nodeEnv} enviroment`,
       );
     });
+    let stopping = false;
+    const shutdown = () => {
+      if (stopping) return;
+      stopping = true;
+      const deadline = setTimeout(() => process.exit(1), 30000);
+      deadline.unref();
+      server.close(() => {
+        void Promise.all([pool.end(), queueService.close()]).then(() => {
+          clearTimeout(deadline);
+        }).catch(() => process.exit(1));
+      });
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } catch (error) {
     console.log("[Server] Failed to start: ", error);
     process.exit(1);

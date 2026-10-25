@@ -13,15 +13,18 @@ const (
 )
 
 type Job struct {
-	ID          string
-	Type        string
-	Payload     []byte // raw JSON — handlers will unmarshal what they need
-	Status      JobStatus
-	RetryCount  int
-	MaxRetries  int
-	Priority    int
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	ProcessedAt *time.Time
-	ErrorMsg    *string
+	Generation   int
+	AttemptCount int
+	LeaseOwner   string
+	ID           string
+	Type         string
+	Payload      []byte // raw JSON — handlers will unmarshal what they need
+	Status       JobStatus
+	RetryCount   int
+	MaxRetries   int
+	Priority     int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	ProcessedAt  *time.Time
+	ErrorMsg     *string
 }

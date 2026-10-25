@@ -10,7 +10,8 @@
     "migrate": "db-migrate up",
     "migrate:down": "db-migrate down",
     "migrate:create": "db-migrate create",
-    "migrate:check": "db-migrate check"
+    "migrate:check": "db-migrate check",
+    "test": "node --test test/*.test.cjs"
   },
   "keywords": [],
   "author": "",
@@ -24,14 +25,12 @@
     "helmet": "^8.1.0",
     "ioredis": "^5.9.3",
     "mysql2": "^3.17.4",
-    "uuid": "^13.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.0",
-    "@types/uuid": "^10.0.0",
     "db-migrate": "^0.11.14",
     "db-migrate-mysql": "^3.0.0",
     "nodemon": "^3.1.14",

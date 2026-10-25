@@ -1,55 +1,45 @@
 package config
 
 import (
-	"log"
+	"fmt"
+	"github.com/joho/godotenv"
 	"os"
 	"strconv"
-
-	"github.com/joho/godotenv"
+	"time"
 )
 
 type Config struct {
-	RedisURL      string
-	MySQLURL      string
-	WorkerCount   int
-	ConsumerGroup string
-	StreamName    string
-	WorkerID      string
+	RedisURL, MySQLURL, StreamName, ConsumerGroup, HTTPAddr            string
+	WorkerCount                                                        int
+	Lease, RecoveryInterval, RecoveryIdle, ShutdownTimeout, JobTimeout time.Duration
 }
 
-func Load() *Config {
-	if err := godotenv.Load(); err != nil {
-		log.Println("[Config] No .env file found, using environment variables")
+func Load() (*Config, error) {
+	_ = godotenv.Load()
+	c := &Config{RedisURL: os.Getenv("REDIS_URL"), MySQLURL: os.Getenv("MYSQL_URL"), StreamName: env("STREAM_NAME", "jobs:queue"), ConsumerGroup: env("CONSUMER_GROUP", "scalequeue-workers"), HTTPAddr: env("HTTP_ADDR", ":9090")}
+	var err error
+	c.WorkerCount, err = strconv.Atoi(env("WORKER_COUNT", "3"))
+	if err != nil || c.WorkerCount < 1 || c.WorkerCount > 100 {
+		return nil, fmt.Errorf("WORKER_COUNT must be 1..100")
 	}
-
-	workerCount, err := strconv.Atoi(getEnv("WORKER_COUNT", "3"))
-	if err != nil {
-		workerCount = 3
+	for k, p := range map[string]*time.Duration{"LEASE_DURATION": &c.Lease, "RECOVERY_INTERVAL": &c.RecoveryInterval, "RECOVERY_IDLE": &c.RecoveryIdle, "SHUTDOWN_TIMEOUT": &c.ShutdownTimeout, "JOB_TIMEOUT": &c.JobTimeout} {
+		defaults := map[string]string{"LEASE_DURATION": "30s", "RECOVERY_INTERVAL": "5s", "RECOVERY_IDLE": "30s", "SHUTDOWN_TIMEOUT": "25s", "JOB_TIMEOUT": "2m"}
+		*p, err = time.ParseDuration(env(k, defaults[k]))
+		if err != nil || *p < time.Millisecond {
+			return nil, fmt.Errorf("invalid %s", k)
+		}
 	}
-
-	cfg := &Config{
-		RedisURL:      mustGetEnv("REDIS_URL"),
-		MySQLURL:      mustGetEnv("MYSQL_URL"),
-		WorkerCount:   workerCount,
-		ConsumerGroup: getEnv("CONSUMER_GROUP", "scalequeue-workers"),
-		StreamName:    getEnv("STREAM_NAME", "jobs:queue"),
-		WorkerID:      getEnv("WORKER_ID", "worker-1"),
+	if c.Lease < 30*time.Millisecond {
+		return nil, fmt.Errorf("lease must be at least 30ms")
 	}
-
-	return cfg
+	if c.RedisURL == "" || c.MySQLURL == "" {
+		return nil, fmt.Errorf("REDIS_URL and MYSQL_URL are required")
+	}
+	return c, nil
 }
-
-func mustGetEnv(key string) string {
-	val := os.Getenv(key)
-	if val == "" {
-		log.Fatalf("[Config] Required environment variable %s is not set", key)
+func env(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
 	}
-	return val
-}
-
-func getEnv(key, fallback string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
-	}
-	return fallback
+	return d
 }

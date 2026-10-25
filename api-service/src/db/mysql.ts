@@ -13,7 +13,7 @@ const pool = mysql.createPool({
   queueLimit: 0,
   timezone: "+00:00",
 
-  ssl: { rejectUnauthorized: false }, // Req for railway-db-ins
+  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: true } : undefined,
 });
 
 // Test connection on startup

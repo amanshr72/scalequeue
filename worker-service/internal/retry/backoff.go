@@ -1,17 +1,21 @@
 package retry
 
-import "time"
+import (
+	"math/rand/v2"
+	"time"
+)
 
-// ExponentialDelay returns how long to wait before retrying
-// attempt 1 → 2s, attempt 2 → 4s, attempt 3 → 8s, capped at 5 minutes
+// Equal jitter: first retry 1–2 seconds; bounded at five minutes without overflow.
 func ExponentialDelay(attempt int) time.Duration {
-	base := 2 * time.Second
-	delay := base * (1 << attempt) // 2^attempt * base
-
-	maxDelay := 5 * time.Minute
-	if delay > maxDelay {
-		delay = maxDelay
+	if attempt < 0 {
+		attempt = 0
 	}
-
-	return delay
+	if attempt > 8 {
+		attempt = 8
+	}
+	cap := 2 * time.Second * time.Duration(1<<attempt)
+	if cap > 5*time.Minute {
+		cap = 5 * time.Minute
+	}
+	return cap/2 + time.Duration(rand.Int64N(int64(cap/2)+1))
 }

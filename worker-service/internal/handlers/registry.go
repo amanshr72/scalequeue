@@ -1,42 +1,34 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
-
 	"worker-service/internal/models"
 )
 
-// Handler is the interface every job type must implement
 type Handler interface {
-	Handle(job *models.Job) error
+	Handle(context.Context, *models.Job) error
 }
+type PermanentError struct{ Err error }
 
-// Registry maps job types to their handlers
-type Registry struct {
-	handlers map[string]Handler
-}
+func (e *PermanentError) Error() string { return e.Err.Error() }
+func (e *PermanentError) Unwrap() error { return e.Err }
+func Permanent(e error) error           { return &PermanentError{e} }
+
+type Registry struct{ handlers map[string]Handler }
 
 func NewRegistry() *Registry {
-	r := &Registry{
-		handlers: make(map[string]Handler),
-	}
-
-	// Register all handlers here
-	r.Register("send_email", &EmailHandler{})               // Email
-	r.Register("send_notification", &NotificationHandler{}) // Notification
-	r.Register("fail_job", &FailingHandler{})               // DLQ
-
+	r := &Registry{handlers: map[string]Handler{}}
+	r.Register("send_email", &EmailHandler{})
+	r.Register("send_notification", &NotificationHandler{})
+	r.Register("fail_job", &FailingHandler{})
 	return r
 }
-
-func (r *Registry) Register(jobType string, handler Handler) {
-	r.handlers[jobType] = handler
-}
-
-func (r *Registry) Get(jobType string) (Handler, error) {
-	h, exists := r.handlers[jobType]
-	if !exists {
-		return nil, fmt.Errorf("no handler registered for job type: %s", jobType)
+func (r *Registry) Register(t string, h Handler) { r.handlers[t] = h }
+func (r *Registry) Get(t string) (Handler, error) {
+	h, ok := r.handlers[t]
+	if !ok {
+		return nil, fmt.Errorf("no handler registered for %s", t)
 	}
 	return h, nil
 }

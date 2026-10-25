@@ -4,8 +4,6 @@ export const createJobSchema = z.object({
   type: z.enum([
     "send_email",
     "send_notification",
-    "generate_report",
-    "payment_retry",
     "fail_job",
   ]),
   payload: z
