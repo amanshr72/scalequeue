@@ -17,7 +17,7 @@ jobs:
       MYSQL_TEST_DSN: 'scalequeue:scalequeue-local@tcp(127.0.0.1:13306)/scalequeue?parseTime=true'
       MYSQL_URL: 'scalequeue:scalequeue-local@tcp(127.0.0.1:13306)/scalequeue?parseTime=true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
