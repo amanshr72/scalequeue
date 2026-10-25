@@ -11,7 +11,10 @@
     "migrate:down": "db-migrate down",
     "migrate:create": "db-migrate create",
     "migrate:check": "db-migrate check",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/*.test.cjs",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "lint": "eslint src && npm run typecheck"
   },
   "keywords": [],
   "author": "",
@@ -31,9 +34,12 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.0",
+    "@typescript-eslint/parser": "8.72.0",
     "db-migrate": "^0.11.14",
     "db-migrate-mysql": "^3.0.0",
+    "eslint": "9.39.5",
     "nodemon": "^3.1.14",
+    "prettier": "3.9.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

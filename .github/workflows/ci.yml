@@ -28,10 +28,10 @@ jobs:
           go-version-file: worker-service/go.mod
           cache-dependency-path: worker-service/go.sum
       - run: docker compose -f compose.yaml -f compose.test.yaml up -d --wait mysql redis
-      - run: npm ci && npm run build && npm test
+      - run: npm ci && npm run format:check && npm run lint && npm run build && npm test
         working-directory: api-service
       - run: node scripts/migration-test.cjs
-      - run: go vet ./... && go test -race -count=1 ./... && go build -o /tmp/scalequeue-worker ./cmd/worker
+      - run: test -z "$(gofmt -l .)" && go vet ./... && go test -race -count=1 ./... && go build -o /tmp/scalequeue-worker ./cmd/worker
         working-directory: worker-service
       - run: node scripts/integration.cjs
       - run: docker compose build
@@ -45,5 +45,16 @@ jobs:
           done
           docker compose logs
           exit 1
+      - name: Repeated synthetic load test
+        run: node scripts/benchmark-report.cjs | tee benchmark-summary.txt
+      - name: Build release binaries
+        run: bash scripts/build-worker.sh ci-check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-and-worker-assets
+          path: |
+            benchmark-results.json
+            benchmark-summary.txt
+            dist/worker/*
       - if: always()
         run: docker compose logs && docker compose -f compose.yaml -f compose.test.yaml down -v
