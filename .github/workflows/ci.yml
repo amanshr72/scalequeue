@@ -49,7 +49,7 @@ jobs:
         run: node scripts/benchmark-report.cjs | tee benchmark-summary.txt
       - name: Build release binaries
         run: bash scripts/build-worker.sh ci-check
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: benchmark-and-worker-assets
           path: |
