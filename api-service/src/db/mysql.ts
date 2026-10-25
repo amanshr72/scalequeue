@@ -1,5 +1,5 @@
-import mysql from "mysql2/promise";
-import { config } from "../config/index";
+import mysql from 'mysql2/promise';
+import { config } from '../config/index';
 
 const pool = mysql.createPool({
   host: config.db.host,
@@ -11,15 +11,15 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  timezone: "+00:00",
+  timezone: '+00:00',
 
-  ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: true } : undefined,
+  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined,
 });
 
 // Test connection on startup
 export async function testConnection(): Promise<void> {
   const conn = await pool.getConnection();
-  console.log("[DB] MySQL connected successfully");
+  console.log('[DB] MySQL connected successfully');
   conn.release();
 }
 

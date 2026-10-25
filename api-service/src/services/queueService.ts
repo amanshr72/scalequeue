@@ -1,9 +1,9 @@
-import Redis from "ioredis";
-import { config } from "../config";
+import Redis from 'ioredis';
+import { config } from '../config';
 
 class QueueService {
   private client: Redis;
-  private readonly STREAM_NAME = "jobs:queue";
+  private readonly STREAM_NAME = 'jobs:queue';
 
   constructor() {
     this.client = new Redis(config.redis.url, {
@@ -11,16 +11,18 @@ class QueueService {
       lazyConnect: true,
     });
 
-    this.client.on("connect", () => {
-      console.log("[Redis] Connected sucessfully");
+    this.client.on('connect', () => {
+      console.log('[Redis] Connected sucessfully');
     });
 
-    this.client.on("error", (err) => {
+    this.client.on('error', (err) => {
       console.error(`[Redis] Connection error: ${err.message}`);
     });
   }
 
-  async close(): Promise<void> { this.client.disconnect(); }
+  async close(): Promise<void> {
+    this.client.disconnect();
+  }
 
   async ping(): Promise<boolean> {
     // try {
@@ -32,7 +34,7 @@ class QueueService {
     // }
     return this.client
       .ping()
-      .then((res) => res === "PONG")
+      .then((res) => res === 'PONG')
       .catch(() => false);
   }
 }

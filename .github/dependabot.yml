@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /api-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    assignees: [amanshr72]
+  - package-ecosystem: gomod
+    directory: /worker-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    assignees: [amanshr72]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    assignees: [amanshr72]
+  - package-ecosystem: docker
+    directory: /api-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    assignees: [amanshr72]
+  - package-ecosystem: docker
+    directory: /worker-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    assignees: [amanshr72]

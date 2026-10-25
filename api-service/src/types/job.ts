@@ -1,14 +1,7 @@
 export type JobStatus =
-  | "PENDING"
-  | "PROCESSING"
-  | "COMPLETED"
-  | "FAILED"
-  | "DEAD";
+  'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'DEAD';
 
-export type JobType =
-  | "send_email"
-  | "send_notification"
-  | "fail_job";
+export type JobType = 'send_email' | 'send_notification' | 'fail_job';
 
 export interface Job {
   id: string;
